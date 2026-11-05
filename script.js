@@ -8,7 +8,10 @@ const pageTitles = {
   reports: ["Analysis Reports", "REPORTS"]
 };
 
-const API_BASE_URL = window.PHISHLENS_API_BASE_URL || "http://127.0.0.1:5000";
+const API_BASE_URL = window.PHISHLENS_API_BASE_URL ||
+    (["localhost", "127.0.0.1"].includes(window.location.hostname)
+        ? "http://127.0.0.1:5000"
+        : "https://phishlens-y79f.onrender.com");
 const state = {
   page: "dashboard",
   records: [],

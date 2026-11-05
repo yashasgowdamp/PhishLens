@@ -855,16 +855,47 @@ class BackendAPITests(unittest.TestCase):
         self.assertEqual(self.client.get("/api/history?limit=1000").status_code, 400)
 
     def test_cors_is_restricted_to_the_configured_live_server_origin(self):
-        allowed = self.client.get(
-            "/api/health",
-            headers={"Origin": "http://localhost:5500"},
-        )
-        rejected = self.client.get(
-            "/api/health",
-            headers={"Origin": "https://untrusted.example"},
-        )
-        self.assertEqual(allowed.headers.get("Access-Control-Allow-Origin"), "http://localhost:5500")
+        with patch.dict(os.environ, {
+            "CORS_ALLOWED_ORIGINS": "",
+            "PHISHLENS_FRONTEND_ORIGIN": "https://phishlens.pages.dev",
+        }):
+            origins = (
+                "http://localhost:5500",
+                "http://127.0.0.1:5500",
+                "https://phishlens.pages.dev",
+            )
+            for origin in origins:
+                with self.subTest(origin=origin):
+                    response = self.client.get(
+                        "/api/health",
+                        headers={"Origin": origin},
+                    )
+                    self.assertEqual(
+                        response.headers.get("Access-Control-Allow-Origin"),
+                        origin,
+                    )
+
+            rejected = self.client.get(
+                "/api/health",
+                headers={"Origin": "https://untrusted.example"},
+            )
         self.assertIsNone(rejected.headers.get("Access-Control-Allow-Origin"))
+
+    def test_cors_frontend_origin_can_be_configured(self):
+        configured_origin = "https://preview.phishlens.pages.dev"
+        with patch.dict(os.environ, {
+            "CORS_ALLOWED_ORIGINS": "",
+            "PHISHLENS_FRONTEND_ORIGIN": configured_origin,
+        }):
+            response = self.client.get(
+                "/api/health",
+                headers={"Origin": configured_origin},
+            )
+
+        self.assertEqual(
+            response.headers.get("Access-Control-Allow-Origin"),
+            configured_origin,
+        )
 
     def test_startup_initializes_database_indexes(self):
         with patch("app.database.check_connection") as check_connection:

@@ -28,13 +28,23 @@ def create_app(test_config=None):
     @application.after_request
     def add_cors_headers(response):
         allowed_origins = {
+            "http://localhost:5500",
+            "http://127.0.0.1:5500",
+        }
+        allowed_origins.update(
             origin.strip()
             for origin in os.environ.get(
                 "CORS_ALLOWED_ORIGINS",
-                "http://localhost:5500,http://127.0.0.1:5500",
+                "",
             ).split(",")
             if origin.strip()
-        }
+        )
+        frontend_origin = os.environ.get(
+            "PHISHLENS_FRONTEND_ORIGIN",
+            "https://phishlens.pages.dev",
+        ).strip()
+        if frontend_origin:
+            allowed_origins.add(frontend_origin)
         origin = request.headers.get("Origin")
         if origin in allowed_origins:
             response.headers["Access-Control-Allow-Origin"] = origin
