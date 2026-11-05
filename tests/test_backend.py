@@ -1,6 +1,9 @@
 import os
 import tempfile
 import unittest
+import base64
+import hashlib
+import stat
 from unittest.mock import patch
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, Mock
@@ -9,7 +12,13 @@ from pymongo.errors import OperationFailure
 import app
 from app import create_app
 import database
-from email_analyzer import EmailModelUnavailable, _load_model
+from email_analyzer import (
+    EmailModelUnavailable,
+    _decode_secret_model_files,
+    _load_model,
+    analyze_email_text,
+    get_model_paths,
+)
 from prepare_dataset import DatasetPreparationError, prepare_dataset
 from risk_engine import assess_risk, assess_url_risk, combine_email_risk
 from train_model import DatasetError, load_labeled_dataset
@@ -87,9 +96,11 @@ class DatasetValidationTests(unittest.TestCase):
 class EmailModelTests(unittest.TestCase):
     def setUp(self):
         _load_model.cache_clear()
+        _decode_secret_model_files.cache_clear()
 
     def tearDown(self):
         _load_model.cache_clear()
+        _decode_secret_model_files.cache_clear()
 
     def test_missing_trained_model_is_reported(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -98,6 +109,249 @@ class EmailModelTests(unittest.TestCase):
                     os.path.join(directory, "missing-classifier.joblib"),
                     os.path.join(directory, "missing-vectorizer.joblib"),
                 )
+
+    def _write_trained_model(self, directory):
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.naive_bayes import MultinomialNB
+
+        texts = [
+            "meeting schedule project team",
+            "team report project meeting",
+            "win prize claim free cash",
+            "claim cash prize now",
+        ]
+        labels = ["legitimate", "legitimate", "spam", "spam"]
+        vectorizer = TfidfVectorizer()
+        features = vectorizer.fit_transform(texts)
+        classifier = MultinomialNB().fit(features, labels)
+        classifier_path = os.path.join(directory, "classifier.joblib")
+        vectorizer_path = os.path.join(directory, "vectorizer.joblib")
+        import joblib
+
+        joblib.dump(classifier, classifier_path)
+        joblib.dump(vectorizer, vectorizer_path)
+        return classifier_path, vectorizer_path
+
+    def test_local_joblib_paths_continue_to_load(self):
+        with tempfile.TemporaryDirectory() as directory:
+            classifier_path, vectorizer_path = self._write_trained_model(directory)
+            with (
+                patch.dict(os.environ, {
+                    "PHISHLENS_CLASSIFIER_PATH": classifier_path,
+                    "PHISHLENS_VECTORIZER_PATH": vectorizer_path,
+                }),
+                patch.dict(os.environ, {
+                    "PHISHLENS_CLASSIFIER_BASE64_FILE": "",
+                    "PHISHLENS_VECTORIZER_BASE64_FILE": "",
+                }),
+            ):
+                result = analyze_email_text("Win a free cash prize now")
+
+        self.assertEqual(result["classification"], "Spam")
+
+    def test_base64_secret_files_decode_and_load_models(self):
+        with tempfile.TemporaryDirectory() as directory:
+            classifier_path, vectorizer_path = self._write_trained_model(directory)
+            hashes = {}
+            secret_paths = []
+            for name, path in (
+                ("classifier", classifier_path),
+                ("vectorizer", vectorizer_path),
+            ):
+                secret_path = path + ".b64"
+                with open(path, "rb") as model_file, open(
+                    secret_path,
+                    "w",
+                    encoding="ascii",
+                ) as secret_file:
+                    secret_file.write(
+                        base64.b64encode(model_file.read()).decode("ascii") + "\n"
+                    )
+                secret_paths.append(secret_path)
+                with open(path, "rb") as model_file:
+                    hashes[name] = hashlib.sha256(model_file.read()).hexdigest()
+
+            with patch.dict(os.environ, {
+                "PHISHLENS_CLASSIFIER_BASE64_FILE": secret_paths[0],
+                "PHISHLENS_VECTORIZER_BASE64_FILE": secret_paths[1],
+                "PHISHLENS_CLASSIFIER_SHA256": hashes["classifier"],
+                "PHISHLENS_VECTORIZER_SHA256": hashes["vectorizer"],
+            }, clear=False):
+                decoded_paths = get_model_paths()
+                loaded_result = analyze_email_text("Win a free cash prize now")
+
+            self.assertTrue(all(os.path.isfile(path) for path in decoded_paths))
+            self.assertEqual(loaded_result["classification"], "Spam")
+            if os.name == "posix":
+                self.assertEqual(
+                    stat.S_IMODE(os.stat(os.path.dirname(decoded_paths[0])).st_mode),
+                    0o700,
+                )
+                self.assertTrue(all(
+                    stat.S_IMODE(os.stat(path).st_mode) == 0o600
+                    for path in decoded_paths
+                ))
+
+    def test_base64_secret_file_configuration_requires_both_files(self):
+        with patch.dict(os.environ, {
+            "PHISHLENS_CLASSIFIER_BASE64_FILE": "classifier.b64",
+            "PHISHLENS_VECTORIZER_BASE64_FILE": "",
+        }, clear=False):
+            with self.assertRaisesRegex(EmailModelUnavailable, "Both"):
+                get_model_paths()
+
+    def test_invalid_base64_secret_file_has_clear_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            classifier_secret = os.path.join(directory, "classifier.b64")
+            vectorizer_secret = os.path.join(directory, "vectorizer.b64")
+            with open(classifier_secret, "w", encoding="ascii") as secret_file:
+                secret_file.write("not valid base64!")
+            with open(vectorizer_secret, "w", encoding="ascii") as secret_file:
+                secret_file.write("dGVzdA==")
+
+            with patch.dict(os.environ, {
+                "PHISHLENS_CLASSIFIER_BASE64_FILE": classifier_secret,
+                "PHISHLENS_VECTORIZER_BASE64_FILE": vectorizer_secret,
+                "PHISHLENS_CLASSIFIER_SHA256": hashlib.sha256(b"classifier").hexdigest(),
+                "PHISHLENS_VECTORIZER_SHA256": hashlib.sha256(b"vectorizer").hexdigest(),
+            }, clear=False):
+                with self.assertRaisesRegex(EmailModelUnavailable, "valid Base64"):
+                    get_model_paths()
+
+    def test_base64_secret_files_reject_empty_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            secret_paths = []
+            for name in ("classifier", "vectorizer"):
+                secret_path = os.path.join(directory, name + ".b64")
+                with open(secret_path, "w", encoding="ascii") as secret_file:
+                    secret_file.write("")
+                secret_paths.append(secret_path)
+
+            with patch.dict(os.environ, {
+                "PHISHLENS_CLASSIFIER_BASE64_FILE": secret_paths[0],
+                "PHISHLENS_VECTORIZER_BASE64_FILE": secret_paths[1],
+                "PHISHLENS_CLASSIFIER_SHA256": hashlib.sha256(b"classifier").hexdigest(),
+                "PHISHLENS_VECTORIZER_SHA256": hashlib.sha256(b"vectorizer").hexdigest(),
+            }, clear=False):
+                with self.assertRaisesRegex(EmailModelUnavailable, "is empty"):
+                    get_model_paths()
+
+    def test_missing_base64_secret_file_has_clear_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(os.environ, {
+                "PHISHLENS_CLASSIFIER_BASE64_FILE": os.path.join(
+                    directory,
+                    "missing-classifier.b64",
+                ),
+                "PHISHLENS_VECTORIZER_BASE64_FILE": os.path.join(
+                    directory,
+                    "missing-vectorizer.b64",
+                ),
+                "PHISHLENS_CLASSIFIER_SHA256": hashlib.sha256(b"classifier").hexdigest(),
+                "PHISHLENS_VECTORIZER_SHA256": hashlib.sha256(b"vectorizer").hexdigest(),
+            }, clear=False):
+                with self.assertRaisesRegex(
+                    EmailModelUnavailable,
+                    "could not be found",
+                ):
+                    get_model_paths()
+
+    def test_base64_secret_files_require_expected_hashes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            secret_paths = []
+            for name in ("classifier", "vectorizer"):
+                secret_path = os.path.join(directory, name + ".b64")
+                with open(secret_path, "w", encoding="ascii") as secret_file:
+                    secret_file.write(base64.b64encode(name.encode()).decode("ascii"))
+                secret_paths.append(secret_path)
+
+            with patch.dict(os.environ, {
+                "PHISHLENS_CLASSIFIER_BASE64_FILE": secret_paths[0],
+                "PHISHLENS_VECTORIZER_BASE64_FILE": secret_paths[1],
+                "PHISHLENS_CLASSIFIER_SHA256": "",
+                "PHISHLENS_VECTORIZER_SHA256": "",
+            }, clear=False):
+                with self.assertRaisesRegex(EmailModelUnavailable, "SHA-256"):
+                    get_model_paths()
+
+    def test_base64_secret_files_reject_oversized_file_before_reading(self):
+        for oversized_model in ("classifier", "vectorizer"):
+            with self.subTest(model=oversized_model):
+                with tempfile.TemporaryDirectory() as directory:
+                    secret_paths = {
+                        "classifier": os.path.join(directory, "classifier.b64"),
+                        "vectorizer": os.path.join(directory, "vectorizer.b64"),
+                    }
+                    for model_name, secret_path in secret_paths.items():
+                        with open(secret_path, "wb") as secret_file:
+                            if model_name == oversized_model:
+                                secret_file.truncate(
+                                    16 * 1024 * 1024 + 1
+                                )
+                            else:
+                                secret_file.write(b"dGVzdA==")
+
+                    with patch.dict(os.environ, {
+                        "PHISHLENS_CLASSIFIER_BASE64_FILE": secret_paths["classifier"],
+                        "PHISHLENS_VECTORIZER_BASE64_FILE": secret_paths["vectorizer"],
+                        "PHISHLENS_CLASSIFIER_SHA256": hashlib.sha256(b"test").hexdigest(),
+                        "PHISHLENS_VECTORIZER_SHA256": hashlib.sha256(b"test").hexdigest(),
+                    }, clear=False):
+                        original_open = open
+
+                        def reject_oversized_read(path, *args, **kwargs):
+                            if os.fspath(path) == secret_paths[oversized_model]:
+                                raise AssertionError("Oversized Secret File was read")
+                            return original_open(path, *args, **kwargs)
+
+                        with patch(
+                            "builtins.open",
+                            side_effect=reject_oversized_read,
+                        ):
+                            with self.assertRaisesRegex(
+                                EmailModelUnavailable,
+                                "exceeds the .*byte size limit",
+                            ):
+                                get_model_paths()
+
+    def test_base64_secret_files_reject_incorrect_hash_before_joblib_load(self):
+        with tempfile.TemporaryDirectory() as directory:
+            secret_paths = []
+            for name in ("classifier", "vectorizer"):
+                secret_path = os.path.join(directory, name + ".b64")
+                with open(secret_path, "w", encoding="ascii") as secret_file:
+                    secret_file.write(base64.b64encode(name.encode()).decode("ascii"))
+                secret_paths.append(secret_path)
+
+            with patch.dict(os.environ, {
+                "PHISHLENS_CLASSIFIER_BASE64_FILE": secret_paths[0],
+                "PHISHLENS_VECTORIZER_BASE64_FILE": secret_paths[1],
+                "PHISHLENS_CLASSIFIER_SHA256": hashlib.sha256(
+                    b"incorrect classifier"
+                ).hexdigest(),
+                "PHISHLENS_VECTORIZER_SHA256": hashlib.sha256(
+                    b"vectorizer"
+                ).hexdigest(),
+            }, clear=False):
+                with patch("email_analyzer.joblib.load") as joblib_load:
+                    with self.assertRaisesRegex(
+                        EmailModelUnavailable,
+                        "integrity verification",
+                    ):
+                        analyze_email_text("Meeting schedule")
+
+            joblib_load.assert_not_called()
+
+    def test_invalid_joblib_artifact_has_clear_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            classifier_path = os.path.join(directory, "classifier.joblib")
+            vectorizer_path = os.path.join(directory, "vectorizer.joblib")
+            for path in (classifier_path, vectorizer_path):
+                with open(path, "wb") as artifact_file:
+                    artifact_file.write(b"not a valid joblib artifact")
+
+            with self.assertRaisesRegex(EmailModelUnavailable, "could not be loaded"):
+                _load_model(classifier_path, vectorizer_path)
 
 
 class BackendAPITests(unittest.TestCase):
@@ -275,8 +529,8 @@ class DatabaseBehaviorTests(unittest.TestCase):
         client.admin.command.assert_called_with("ping")
         mongo_client.assert_called_once_with(
             "mongodb://127.0.0.1:27017/",
-            serverSelectionTimeoutMS=1_500,
-            connectTimeoutMS=1_500,
+            serverSelectionTimeoutMS=15_000,
+            connectTimeoutMS=10_000,
         )
         self.assertEqual(collection.create_index.call_count, 4)
         self.assertEqual(
