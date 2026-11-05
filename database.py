@@ -10,6 +10,14 @@ from pymongo.errors import PyMongoError
 ANALYSIS_RETENTION_DAYS = 90
 ANALYSIS_RETENTION_SECONDS = ANALYSIS_RETENTION_DAYS * 24 * 60 * 60
 ANALYSIS_RETENTION_INDEX = "analysis_retention_ttl"
+_MONGODB_URI_PATTERN = re.compile(r"mongodb(?:\+srv)?://[^\s\"'<>]+", re.IGNORECASE)
+_AUTH_CREDENTIAL_PATTERN = re.compile(
+    r"(?i)\b(?:bearer|basic)\s+[A-Za-z0-9._~+/-]+=*"
+)
+_SENSITIVE_VALUE_PATTERN = re.compile(
+    r"(?i)\b(username|user|password|passwd|pwd|token|access[_ -]?token|"
+    r"api[_ -]?key|secret|authorization)\b([=:])\s*([^\s,;]+)"
+)
 
 logger = logging.getLogger(__name__)
 _client = None
@@ -19,6 +27,13 @@ _initialized_collections = set()
 
 class DatabaseUnavailable(RuntimeError):
     """Raised when shared MongoDB persistence cannot be used."""
+
+
+def _safe_database_error_detail(error):
+    detail = str(error)
+    detail = _MONGODB_URI_PATTERN.sub("[MongoDB URI redacted]", detail)
+    detail = _AUTH_CREDENTIAL_PATTERN.sub("[credential redacted]", detail)
+    return _SENSITIVE_VALUE_PATTERN.sub(r"\1\2[REDACTED]", detail)
 
 
 def _database_collection():
@@ -105,6 +120,11 @@ def _database_collection():
             _initialized_collections.add(collection_key)
         return collection
     except PyMongoError as error:
+        logger.error(
+            "MongoDB connection failed (%s): %s",
+            type(error).__name__,
+            _safe_database_error_detail(error),
+        )
         raise DatabaseUnavailable(
             "MongoDB is unavailable. Check MONGODB_URI and ensure the database server is running."
         ) from error

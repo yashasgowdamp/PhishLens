@@ -732,7 +732,14 @@ class BackendAPITests(unittest.TestCase):
             self.assertEqual(self.client.get("/").status_code, 200)
             response = self.client.get("/api/health")
         self.assertEqual(response.status_code, 200)
-        self.assertFalse(response.json["database"]["available"])
+        self.assertEqual(response.json, {
+            "status": "success",
+            "message": "PhishLens backend is running.",
+            "database": {
+                "available": False,
+                "message": "MONGODB_URI is not configured.",
+            },
+        })
 
     def test_render_healthz_does_not_depend_on_mongodb_or_models(self):
         with (
@@ -980,6 +987,37 @@ class DatabaseBehaviorTests(unittest.TestCase):
                 "MONGODB_URI is not configured",
             ):
                 database._database_collection()
+
+    def test_connection_failure_logs_sanitized_driver_diagnostics(self):
+        error_message = (
+            "Authentication failed; username=atlas-user password=atlas-password "
+            "token=atlas-token authorization=Bearer atlas-bearer-token endpoint "
+            "mongodb+srv://atlas-user:atlas-password@cluster.example/"
+            "phishlens?authSource=admin&token=atlas-token"
+        )
+        client = MagicMock()
+        client.admin.command.side_effect = OperationFailure(error_message)
+        with (
+            patch.dict("os.environ", {
+                "MONGODB_URI": (
+                    "mongodb+srv://atlas-user:atlas-password@cluster.example/"
+                    "phishlens?authSource=admin&token=atlas-token"
+                ),
+            }),
+            patch("database.MongoClient", return_value=client),
+            self.assertLogs("database", level="ERROR") as captured,
+        ):
+            with self.assertRaises(database.DatabaseUnavailable):
+                database.check_connection()
+
+        diagnostic = "\n".join(captured.output)
+        self.assertIn("OperationFailure", diagnostic)
+        self.assertIn("Authentication failed", diagnostic)
+        self.assertIn("[MongoDB URI redacted]", diagnostic)
+        self.assertNotIn("atlas-user", diagnostic)
+        self.assertNotIn("atlas-password", diagnostic)
+        self.assertNotIn("atlas-token", diagnostic)
+        self.assertNotIn("mongodb+srv://", diagnostic)
 
     def test_history_filters_are_escaped_and_paged_in_database(self):
         collection = MagicMock()
