@@ -63,6 +63,10 @@ def create_app(test_config=None):
             "status": "success",
         })
 
+    @application.get("/healthz")
+    def render_health_check():
+        return jsonify({"status": "ok"})
+
     @application.get("/api/health")
     def health_check():
         try:

@@ -734,6 +734,23 @@ class BackendAPITests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.json["database"]["available"])
 
+    def test_render_healthz_does_not_depend_on_mongodb_or_models(self):
+        with (
+            patch(
+                "database.check_connection",
+                side_effect=database.DatabaseUnavailable(
+                    "MONGODB_URI is not configured."
+                ),
+            ) as check_connection,
+            patch("app.analyze_email_text") as analyze_email_text,
+        ):
+            response = self.client.get("/healthz")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json, {"status": "ok"})
+        check_connection.assert_not_called()
+        analyze_email_text.assert_not_called()
+
     def test_preprocessing_endpoint_validates_and_cleans_text(self):
         missing = self.client.post(
             "/api/preprocess-email",
