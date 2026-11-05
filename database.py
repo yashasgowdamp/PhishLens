@@ -44,8 +44,8 @@ def _database_collection():
         if _client is None or uri != _client_uri:
             new_client = MongoClient(
                 uri,
-                serverSelectionTimeoutMS=1_500,
-                connectTimeoutMS=1_500,
+                serverSelectionTimeoutMS=15_000,
+                connectTimeoutMS=10_000,
             )
             if _client is not None:
                 _client.close()
