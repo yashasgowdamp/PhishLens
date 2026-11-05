@@ -3,15 +3,20 @@ import tempfile
 import unittest
 import base64
 import hashlib
+import http.client
+import io
+import json
 import stat
 from unittest.mock import patch
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, Mock
+from urllib.error import HTTPError
 from pymongo.errors import OperationFailure
 
 import app
 from app import create_app
 import database
+import email_analyzer
 from email_analyzer import (
     EmailModelUnavailable,
     _decode_secret_model_files,
@@ -97,10 +102,12 @@ class EmailModelTests(unittest.TestCase):
     def setUp(self):
         _load_model.cache_clear()
         _decode_secret_model_files.cache_clear()
+        email_analyzer._download_release_model_files.cache_clear()
 
     def tearDown(self):
         _load_model.cache_clear()
         _decode_secret_model_files.cache_clear()
+        email_analyzer._download_release_model_files.cache_clear()
 
     def test_missing_trained_model_is_reported(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -131,6 +138,117 @@ class EmailModelTests(unittest.TestCase):
         joblib.dump(classifier, classifier_path)
         joblib.dump(vectorizer, vectorizer_path)
         return classifier_path, vectorizer_path
+
+    def _github_model_environment(self, classifier_bytes, vectorizer_bytes):
+        return {
+            "PHISHLENS_GITHUB_REPOSITORY": "example-org/phishlens-models",
+            "PHISHLENS_GITHUB_RELEASE_TAG": "v1.0.0",
+            "PHISHLENS_GITHUB_TOKEN": "test-token",
+            "PHISHLENS_CLASSIFIER_SHA256": hashlib.sha256(
+                classifier_bytes
+            ).hexdigest(),
+            "PHISHLENS_VECTORIZER_SHA256": hashlib.sha256(
+                vectorizer_bytes
+            ).hexdigest(),
+        }
+
+    def _github_response(self, content, headers=None):
+        response = Mock()
+        response.headers = headers or {}
+        response.read.side_effect = io.BytesIO(content).read
+        context = MagicMock()
+        context.__enter__.return_value = response
+        context.__exit__.return_value = False
+        return context
+
+    def _github_opener_patch(self, responses):
+        opener = MagicMock()
+        opener.open.side_effect = responses
+        return patch("email_analyzer.build_opener", return_value=opener), opener
+
+    def test_github_asset_https_redirect_strips_sensitive_headers(self):
+        redirected_requests = []
+
+        def fake_build_opener(handler):
+            self.assertIsInstance(handler, email_analyzer._SafeGitHubRedirectHandler)
+            opener = MagicMock()
+
+            def open_request(request, timeout):
+                self.assertEqual(timeout, 15)
+                self.assertEqual(request.get_header("Authorization"), "Bearer github-test-token")
+                request.add_header("Proxy-Authorization", "Basic proxy-test-credentials")
+                redirected_requests.append(handler.redirect_request(
+                    request,
+                    None,
+                    302,
+                    "Found",
+                    {},
+                    "https://release-assets.githubusercontent.com/model",
+                ))
+                return self._github_response(b"model data")
+
+            opener.open.side_effect = open_request
+            return opener
+
+        with patch("email_analyzer.build_opener", side_effect=fake_build_opener):
+            email_analyzer._github_request(
+                "https://api.github.com/repos/example-org/phishlens-models/"
+                "releases/assets/101",
+                "github-test-token",
+                "application/octet-stream",
+            )
+
+        self.assertEqual(len(redirected_requests), 1)
+        redirected_request = redirected_requests[0]
+        self.assertEqual(
+            redirected_request.full_url,
+            "https://release-assets.githubusercontent.com/model",
+        )
+        for request_headers in (
+            redirected_request.headers,
+            redirected_request.unredirected_hdrs,
+        ):
+            self.assertFalse(any(
+                header_name.lower() in {
+                    "authorization",
+                    "proxy-authorization",
+                }
+                for header_name in request_headers
+            ))
+
+    def test_github_redirect_rejects_http(self):
+        request = email_analyzer.Request(
+            "https://api.github.com/repos/example-org/phishlens-models/"
+            "releases/assets/101",
+            headers={"Authorization": "Bearer github-test-token"},
+        )
+        handler = email_analyzer._SafeGitHubRedirectHandler()
+
+        with self.assertRaisesRegex(EmailModelUnavailable, "only allow HTTPS"):
+            handler.redirect_request(
+                request,
+                None,
+                302,
+                "Found",
+                {},
+                "http://release-assets.example.com/model",
+            )
+
+    def _release_metadata(self, classifier_bytes, vectorizer_bytes):
+        return json.dumps({
+            "assets": [
+                {
+                    "name": "classifier.joblib",
+                    "id": 101,
+                    "size": len(classifier_bytes),
+                },
+                {
+                    "name": "vectorizer.joblib",
+                    "id": 202,
+                    "size": len(vectorizer_bytes),
+                },
+            ],
+        }).encode("utf-8")
 
     def test_local_joblib_paths_continue_to_load(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -341,6 +459,255 @@ class EmailModelTests(unittest.TestCase):
                         analyze_email_text("Meeting schedule")
 
             joblib_load.assert_not_called()
+
+    def test_github_release_models_download_authenticate_and_load(self):
+        with tempfile.TemporaryDirectory() as directory:
+            classifier_path, vectorizer_path = self._write_trained_model(directory)
+            with open(classifier_path, "rb") as model_file:
+                classifier_bytes = model_file.read()
+            with open(vectorizer_path, "rb") as model_file:
+                vectorizer_bytes = model_file.read()
+            responses = [
+                self._github_response(
+                    self._release_metadata(classifier_bytes, vectorizer_bytes)
+                ),
+                self._github_response(
+                    classifier_bytes,
+                    {"Content-Length": str(len(classifier_bytes))},
+                ),
+                self._github_response(
+                    vectorizer_bytes,
+                    {"Content-Length": str(len(vectorizer_bytes))},
+                ),
+            ]
+            opener_patch, opener_mock = self._github_opener_patch(responses)
+            with (
+                patch.dict(os.environ, self._github_model_environment(
+                    classifier_bytes,
+                    vectorizer_bytes,
+                ), clear=False),
+                patch.dict(os.environ, {
+                    "PHISHLENS_CLASSIFIER_BASE64_FILE": "",
+                    "PHISHLENS_VECTORIZER_BASE64_FILE": "",
+                }),
+                opener_patch,
+            ):
+                result = analyze_email_text("Win a free cash prize now")
+
+            self.assertEqual(result["classification"], "Spam")
+            self.assertEqual(opener_mock.open.call_count, 3)
+            metadata_request = opener_mock.open.call_args_list[0].args[0]
+            self.assertEqual(
+                metadata_request.full_url,
+                "https://api.github.com/repos/example-org/phishlens-models/"
+                "releases/tags/v1.0.0",
+            )
+            for call in opener_mock.open.call_args_list:
+                self.assertEqual(call.kwargs["timeout"], 15)
+                self.assertEqual(
+                    call.args[0].get_header("Authorization"),
+                    "Bearer test-token",
+                )
+
+    def test_github_release_authentication_failure_is_sanitized(self):
+        opener_patch, _ = self._github_opener_patch([
+            HTTPError(
+                "https://api.github.com/private",
+                401,
+                "Unauthorized",
+                {},
+                None,
+            ),
+        ])
+        with (
+            patch.dict(os.environ, self._github_model_environment(b"a", b"b")),
+            opener_patch,
+        ):
+            with self.assertRaisesRegex(
+                EmailModelUnavailable,
+                "rejected model-release authentication",
+            ) as error:
+                get_model_paths()
+
+        self.assertNotIn("test-token", str(error.exception))
+
+    def test_github_release_missing_model_asset_is_reported(self):
+        metadata = json.dumps({
+            "assets": [{
+                "name": "classifier.joblib",
+                "id": 101,
+                "size": 1,
+            }],
+        }).encode("utf-8")
+        opener_patch, _ = self._github_opener_patch([
+            self._github_response(metadata),
+        ])
+        with (
+            patch.dict(os.environ, self._github_model_environment(b"a", b"b")),
+            opener_patch,
+        ):
+            with self.assertRaisesRegex(
+                EmailModelUnavailable,
+                "missing the required vectorizer.joblib asset",
+            ):
+                get_model_paths()
+
+    def test_github_release_rejects_hash_mismatch_before_joblib_load(self):
+        classifier_bytes = b"classifier data"
+        vectorizer_bytes = b"vectorizer data"
+        responses = [
+            self._github_response(
+                self._release_metadata(classifier_bytes, vectorizer_bytes)
+            ),
+            self._github_response(
+                classifier_bytes,
+                {"Content-Length": str(len(classifier_bytes))},
+            ),
+            self._github_response(
+                vectorizer_bytes,
+                {"Content-Length": str(len(vectorizer_bytes))},
+            ),
+        ]
+        environment = self._github_model_environment(
+            b"wrong classifier data",
+            vectorizer_bytes,
+        )
+        opener_patch, _ = self._github_opener_patch(responses)
+        with (
+            patch.dict(os.environ, environment),
+            opener_patch,
+            patch("email_analyzer.joblib.load") as joblib_load,
+        ):
+            with self.assertRaisesRegex(
+                EmailModelUnavailable,
+                "classifier model failed SHA-256 integrity verification",
+            ):
+                analyze_email_text("Meeting schedule")
+
+        joblib_load.assert_not_called()
+
+    def test_github_release_rejects_oversized_model_asset(self):
+        metadata = json.dumps({
+            "assets": [
+                {
+                    "name": "classifier.joblib",
+                    "id": 101,
+                    "size": 16 * 1024 * 1024 + 1,
+                },
+                {
+                    "name": "vectorizer.joblib",
+                    "id": 202,
+                    "size": 1,
+                },
+            ],
+        }).encode("utf-8")
+        opener_patch, opener_mock = self._github_opener_patch([
+            self._github_response(metadata),
+        ])
+        with (
+            patch.dict(os.environ, self._github_model_environment(b"a", b"b")),
+            opener_patch,
+        ):
+            with self.assertRaisesRegex(EmailModelUnavailable, "download limit"):
+                get_model_paths()
+
+        opener_mock.open.assert_called_once()
+
+    def test_github_release_enforces_streamed_download_size_limit(self):
+        classifier_bytes = b"x"
+        vectorizer_bytes = b"y"
+        oversized_size = 16 * 1024 * 1024 + 1
+        metadata = self._release_metadata(classifier_bytes, vectorizer_bytes)
+        metadata_data = json.loads(metadata)
+        metadata_data["assets"][0]["size"] = len(classifier_bytes)
+        metadata = json.dumps(metadata_data).encode("utf-8")
+
+        def oversized_read(size):
+            return b"x" * min(size, oversized_size)
+
+        oversized_response = MagicMock()
+        oversized_response.headers = {}
+        oversized_response.read.side_effect = oversized_read
+        context = MagicMock()
+        context.__enter__.return_value = oversized_response
+        context.__exit__.return_value = False
+
+        opener_patch, _ = self._github_opener_patch([
+            self._github_response(metadata),
+            context,
+        ])
+        with (
+            patch.dict(os.environ, self._github_model_environment(b"x", b"y")),
+            opener_patch,
+        ):
+            with self.assertRaisesRegex(EmailModelUnavailable, "download limit"):
+                get_model_paths()
+
+    def test_github_release_asset_stream_timeout_is_clear(self):
+        classifier_bytes = b"classifier data"
+        vectorizer_bytes = b"vectorizer data"
+        metadata = self._release_metadata(classifier_bytes, vectorizer_bytes)
+        timed_out_asset = self._github_response(b"", {
+            "Content-Length": str(len(classifier_bytes)),
+        })
+        timed_out_asset.__enter__.return_value.read.side_effect = TimeoutError
+
+        opener_patch, _ = self._github_opener_patch([
+            self._github_response(metadata),
+            timed_out_asset,
+        ])
+        with (
+            patch.dict(os.environ, self._github_model_environment(
+                classifier_bytes,
+                vectorizer_bytes,
+            )),
+            opener_patch,
+        ):
+            with self.assertRaisesRegex(
+                EmailModelUnavailable,
+                "GitHub model download timed out",
+            ):
+                get_model_paths()
+
+    def test_github_release_interrupted_asset_stream_is_reported(self):
+        classifier_bytes = b"classifier data"
+        vectorizer_bytes = b"vectorizer data"
+        metadata = self._release_metadata(classifier_bytes, vectorizer_bytes)
+        interrupted_asset = self._github_response(b"", {
+            "Content-Length": str(len(classifier_bytes)),
+        })
+        interrupted_asset.__enter__.return_value.read.side_effect = (
+            http.client.IncompleteRead(b"partial", 1)
+        )
+
+        opener_patch, _ = self._github_opener_patch([
+            self._github_response(metadata),
+            interrupted_asset,
+        ])
+        with (
+            patch.dict(os.environ, self._github_model_environment(
+                classifier_bytes,
+                vectorizer_bytes,
+            )),
+            opener_patch,
+        ):
+            with self.assertRaisesRegex(
+                EmailModelUnavailable,
+                "asset could not be downloaded",
+            ):
+                get_model_paths()
+
+    def test_github_release_download_timeout_is_clear(self):
+        opener_patch, _ = self._github_opener_patch([TimeoutError()])
+        with (
+            patch.dict(os.environ, self._github_model_environment(b"a", b"b")),
+            opener_patch,
+        ):
+            with self.assertRaisesRegex(
+                EmailModelUnavailable,
+                "GitHub model download timed out",
+            ):
+                get_model_paths()
 
     def test_invalid_joblib_artifact_has_clear_error(self):
         with tempfile.TemporaryDirectory() as directory:

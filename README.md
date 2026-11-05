@@ -107,6 +107,30 @@ a prediction.
 `PHISHLENS_VECTORIZER_PATH` can override these local defaults. Dataset
 preparation refuses to write over the tracked root `emails.csv`.
 
+### Private GitHub Release model deployment
+
+For cloud deployments without local model files, publish `classifier.joblib`
+and `vectorizer.joblib` as assets on a **private** GitHub Release. Configure
+these environment variables in the hosting provider (for example, Render),
+without committing their values:
+
+- `PHISHLENS_GITHUB_REPOSITORY`: `owner/repository`
+- `PHISHLENS_GITHUB_RELEASE_TAG`: the release tag containing both assets
+- `PHISHLENS_GITHUB_TOKEN`: a fine-grained token with read-only Contents access
+  to that private repository
+- `PHISHLENS_CLASSIFIER_SHA256` and `PHISHLENS_VECTORIZER_SHA256`: SHA-256
+  hashes of the exact corresponding release files
+
+Generate the hashes locally with
+`Get-FileHash -Algorithm SHA256 classifier.joblib, vectorizer.joblib`; set each
+environment variable to the `Hash` value for its matching artifact. The
+application downloads the assets on the first email analysis, verifies each
+hash before loading, and caches the private temporary files for that process.
+Each file is limited to 16 MiB and requests have a 15-second timeout; temporary
+files are removed when the process exits. Never add the token or model
+artifacts to Git. When GitHub configuration is absent, the existing Base64
+Secret File and local `.joblib` workflows remain available.
+
 ### Measured Phase 2 preparation and evaluation
 
 Results from the actual local run (Python 3.13, scikit-learn 1.9.1; held-out
