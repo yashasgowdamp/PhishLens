@@ -27,8 +27,7 @@ The URI below contains no credentials and is the default local MongoDB address:
 $env:MONGODB_URI = "mongodb://127.0.0.1:27017/"
 $env:MONGODB_DATABASE = "phishlens"
 $env:MONGODB_COLLECTION = "analysis_history"
-$env:CORS_ALLOWED_ORIGINS = "http://localhost:5500,http://127.0.0.1:5500"
-$env:PHISHLENS_FRONTEND_ORIGIN = "https://phishlens.pages.dev"
+$env:FRONTEND_ORIGINS = "https://getphishlens.netlify.app,https://phishlens-27w.pages.dev"
 Get-Service MongoDB
 Start-Service MongoDB
 .\.venv\Scripts\python.exe app.py
@@ -39,10 +38,13 @@ MongoDB Community Server first. Starting a service may require an elevated
 PowerShell window. Alternatively, start `mongod` directly with a data directory
 and leave it running while Flask is in use. Check `GET /api/health`; its
 `database.available` field should be `true` before relying on shared history.
-For deployment, set `PHISHLENS_FRONTEND_ORIGIN` to the exact Cloudflare Pages
-origin; the default is `https://phishlens.pages.dev`. Local Live Server origins
-remain allowed. The frontend selects the local Flask API on `localhost` or
-`127.0.0.1` and the Render API on deployed hosts.
+For deployment, configure `FRONTEND_ORIGINS` as a comma-separated list of
+exact website origins. The defaults are
+`https://getphishlens.netlify.app` and `https://phishlens-27w.pages.dev`;
+local Live Server origins remain allowed. The frontend selects the local Flask
+API on `localhost` or `127.0.0.1` and the Render API on deployed hosts. The
+older `CORS_ALLOWED_ORIGINS` and `PHISHLENS_FRONTEND_ORIGIN` settings remain
+supported for compatibility.
 
 For a hosted MongoDB deployment, provide its connection string through
 `MONGODB_URI`; do not commit or share credentials. When MongoDB is not

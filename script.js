@@ -8,10 +8,17 @@ const pageTitles = {
   reports: ["Analysis Reports", "REPORTS"]
 };
 
-const API_BASE_URL = window.PHISHLENS_API_BASE_URL ||
-    (["localhost", "127.0.0.1"].includes(window.location.hostname)
-        ? "http://127.0.0.1:5000"
-        : "https://phishlens-y79f.onrender.com");
+function getApiBaseUrl(hostname, override) {
+  if (override) return override;
+  return ["localhost", "127.0.0.1"].includes(hostname)
+    ? "http://127.0.0.1:5000"
+    : "https://phishlens-y79f.onrender.com";
+}
+
+const API_BASE_URL = getApiBaseUrl(
+  window.location.hostname,
+  window.PHISHLENS_API_BASE_URL
+);
 const state = {
   page: "dashboard",
   records: [],

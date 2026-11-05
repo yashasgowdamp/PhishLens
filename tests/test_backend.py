@@ -856,13 +856,18 @@ class BackendAPITests(unittest.TestCase):
 
     def test_cors_is_restricted_to_the_configured_live_server_origin(self):
         with patch.dict(os.environ, {
+            "FRONTEND_ORIGINS": (
+                "https://getphishlens.netlify.app,"
+                "https://phishlens-27w.pages.dev"
+            ),
             "CORS_ALLOWED_ORIGINS": "",
-            "PHISHLENS_FRONTEND_ORIGIN": "https://phishlens.pages.dev",
+            "PHISHLENS_FRONTEND_ORIGIN": "",
         }):
             origins = (
                 "http://localhost:5500",
                 "http://127.0.0.1:5500",
-                "https://phishlens.pages.dev",
+                "https://getphishlens.netlify.app",
+                "https://phishlens-27w.pages.dev",
             )
             for origin in origins:
                 with self.subTest(origin=origin):
@@ -896,6 +901,62 @@ class BackendAPITests(unittest.TestCase):
             response.headers.get("Access-Control-Allow-Origin"),
             configured_origin,
         )
+
+    def test_frontend_origins_accepts_comma_separated_values_without_wildcard(self):
+        configured_origins = (
+            "https://preview.netlify.app, https://preview.pages.dev, *"
+        )
+        with patch.dict(os.environ, {
+            "FRONTEND_ORIGINS": configured_origins,
+            "CORS_ALLOWED_ORIGINS": "",
+            "PHISHLENS_FRONTEND_ORIGIN": "",
+        }):
+            responses = {
+                origin: self.client.get(
+                    "/api/health",
+                    headers={"Origin": origin},
+                )
+                for origin in (
+                    "https://preview.netlify.app",
+                    "https://preview.pages.dev",
+                    "https://unconfigured.example",
+                    "*",
+                )
+            }
+
+        for origin in ("https://preview.netlify.app", "https://preview.pages.dev"):
+            self.assertEqual(
+                responses[origin].headers.get("Access-Control-Allow-Origin"),
+                origin,
+            )
+        self.assertIsNone(
+            responses["https://unconfigured.example"].headers.get(
+                "Access-Control-Allow-Origin"
+            )
+        )
+        self.assertNotEqual(
+            responses["*"].headers.get("Access-Control-Allow-Origin"),
+            "*",
+        )
+
+    def test_api_base_url_selection_contract_is_shared_by_both_frontends(self):
+        project_root = os.path.dirname(os.path.dirname(__file__))
+        script_paths = (
+            os.path.join(project_root, "script.js"),
+            os.path.join(project_root, "public", "script.js"),
+        )
+        with open(script_paths[0], encoding="utf-8") as script_file:
+            root_script = script_file.read()
+        with open(script_paths[1], encoding="utf-8") as script_file:
+            public_script = script_file.read()
+
+        self.assertEqual(root_script, public_script)
+        self.assertIn("function getApiBaseUrl(hostname, override)", root_script)
+        self.assertIn("if (override) return override;", root_script)
+        self.assertIn('["localhost", "127.0.0.1"].includes(hostname)', root_script)
+        self.assertIn('"http://127.0.0.1:5000"', root_script)
+        self.assertIn('"https://phishlens-y79f.onrender.com"', root_script)
+        self.assertIn("window.PHISHLENS_API_BASE_URL", root_script)
 
     def test_startup_initializes_database_indexes(self):
         with patch("app.database.check_connection") as check_connection:
