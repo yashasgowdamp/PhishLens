@@ -1,1 +1,248 @@
-git -
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#070f1e">
+  <title>PhishLens — Phishing &amp; Spam Detection</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='12' fill='%230b1c33'/%3E%3Cpath d='M24 9l11 4.4v8c0 6.6-4.4 12.4-11 14.4-6.6-2-11-7.8-11-14.4v-8L24 9z' fill='none' stroke='%238eb7ff' stroke-width='2'/%3E%3Ccircle cx='24' cy='22.5' r='5.5' fill='none' stroke='%233d8bfd' stroke-width='2'/%3E%3Ccircle cx='24' cy='22.5' r='1.7' fill='%23e7eef8'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#dashboard" aria-label="PhishLens dashboard">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 48 48" fill="none">
+            <path d="M24 9 35 13.4v8c0 6.6-4.4 12.4-11 14.4-6.6-2-11-7.8-11-14.4v-8L24 9Z" stroke="currentColor" stroke-width="1.8"/>
+            <circle cx="23" cy="21" r="5.5" stroke="currentColor" stroke-width="1.8"/>
+            <path d="m27 25 4 4M20.5 21h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+          <span class="online-dot"></span>
+        </span>
+        <span class="brand-text"><strong>PhishLens</strong><small>PHISHING &amp; SPAM DETECTION</small></span>
+      </a>
+
+      <p class="nav-caption">PROJECT WORKSPACE</p>
+      <nav class="primary-nav" aria-label="Main navigation">
+        <a class="nav-link" href="#dashboard" data-page="dashboard">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          <span>Dashboard</span>
+        </a>
+        <a class="nav-link" href="#email" data-page="email">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg>
+          <span>Email Scanner</span>
+        </a>
+        <a class="nav-link" href="#url" data-page="url">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13.5a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 10.5a5 5 0 0 0-7.1 0l-2 2A5 5 0 0 0 12 19.6l1.1-1.1"/></svg>
+          <span>URL Scanner</span>
+        </a>
+        <a class="nav-link" href="#history" data-page="history">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 2.64-6.36L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>
+          <span>Detection History</span>
+        </a>
+        <a class="nav-link" href="#reports" data-page="reports">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l4 4v14H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M14 3v5h5M8 16v-3m4 3v-6m4 6v-4"/></svg>
+          <span>Analysis Reports</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-note">
+        <div class="note-top">
+          <span class="note-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7"/></svg>
+          </span>
+          <span class="tag tag-blue">SHARED WORKSPACE</span>
+        </div>
+        <strong>College project interface</strong>
+        <p>Records are shared and may be accessible to anyone visiting this app. They expire after 90 days. URL query strings and fragments are omitted from shared history. Avoid submitting sensitive or personal information.</p>
+      </div>
+    </aside>
+
+    <div class="main-shell">
+      <header class="topbar">
+        <button class="mobile-menu icon-button" id="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <div class="topbar-title">
+          <p class="eyebrow"><span>PHISHLENS</span><span class="crumb-separator">/</span><span id="breadcrumb">DASHBOARD</span></p>
+          <h1 id="page-title">Dashboard</h1>
+        </div>
+      </header>
+
+      <main class="page-content">
+        <section class="view" id="dashboard" data-view="dashboard">
+          <div class="page-heading">
+            <span class="tag tag-blue">SHARED DASHBOARD</span>
+            <h2>Detection Overview</h2>
+            <p>Shared statistics from email and URL analyses stored by the Flask backend.</p>
+          </div>
+          <p class="form-message form-message-info dashboard-message" id="dashboard-message" role="status" hidden></p>
+
+          <div class="metric-grid">
+            <article class="metric-card"><div class="metric-top"><span class="metric-icon icon-email"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span><span class="tag tag-muted">SHARED</span></div><p>Total Emails Analysed</p><strong id="dashboard-email-count">—</strong><small>Shared records</small></article>
+            <article class="metric-card"><div class="metric-top"><span class="metric-icon icon-url"><svg viewBox="0 0 24 24"><path d="M10 13.5a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 10.5a5 5 0 0 0-7.1 0l-2 2A5 5 0 0 0 12 19.6l1.1-1.1"/></svg></span><span class="tag tag-muted">SHARED</span></div><p>Total URLs Analysed</p><strong id="dashboard-url-count">—</strong><small>Shared records</small></article>
+            <article class="metric-card"><div class="metric-top"><span class="metric-icon icon-danger"><svg viewBox="0 0 24 24"><path d="M12 3 20 7v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7l8-4Z"/><path d="M12 8v5m0 3h.01"/></svg></span><span class="tag tag-muted">MODEL</span></div><p>Spam Emails Classified</p><strong id="dashboard-spam-count">—</strong><small>Model classification</small></article>
+            <article class="metric-card"><div class="metric-top"><span class="metric-icon icon-warning"><svg viewBox="0 0 24 24"><path d="m10.3 4.3-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-2.7l-8-14a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 4h.01"/></svg></span><span class="tag tag-muted">MEDIUM / HIGH</span></div><p>URLs Flagged for Review</p><strong id="dashboard-suspicious-url-count">—</strong><small>Indicative risk flag</small></article>
+          </div>
+
+          <div class="dashboard-grid">
+            <article class="card chart-card">
+              <div class="card-heading"><div><h3>Analysis Activity</h3><p>Shared analyses (blue) and medium/high risk (red), last seven UTC days</p></div></div>
+              <div class="chart-area">
+                <svg class="activity-chart" id="dashboard-activity-chart" viewBox="0 0 760 250" role="img" aria-label="Shared analysis activity over the last seven days">
+                  <defs><linearGradient id="activity-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#3487ff" stop-opacity=".24"/><stop offset="1" stop-color="#3487ff" stop-opacity="0"/></linearGradient></defs>
+                  <g class="chart-grid"><path d="M44 28H742M44 88H742M44 148H742M44 208H742"/><text class="activity-y3" id="activity-y3" x="10" y="32">—</text><text class="activity-y2" id="activity-y2" x="10" y="92">—</text><text class="activity-y1" id="activity-y1" x="16" y="152">—</text><text class="activity-y0" id="activity-y0" x="22" y="212">0</text></g>
+                  <path class="chart-fill activity-fill-path" id="activity-fill-path" d=""/>
+                  <path class="chart-line activity-total-path" id="activity-total-path" d=""/>
+                  <path class="chart-line chart-line-alert activity-flagged-path" id="activity-flagged-path" d=""/>
+                  <g class="chart-points activity-points" id="activity-points"></g>
+                  <g class="chart-days activity-days" id="activity-days"></g>
+                </svg>
+              </div>
+            </article>
+            <article class="card summary-card">
+              <div class="card-heading"><div><h3>Overall Detection Summary</h3><p>Based on shared stored analyses</p></div></div>
+              <div class="summary-content">
+                <div class="donut" id="dashboard-flagged-donut" role="img" aria-label="Shared risk summary unavailable"><span><strong id="dashboard-flagged-percent">—</strong><small>FLAGGED</small></span></div>
+                <div class="summary-stats"><p>Total shared analyses<strong id="dashboard-total-count">—</strong></p><p>Medium/high risk<strong class="text-warning" id="dashboard-flagged-count">—</strong></p></div>
+              </div>
+              <div class="summary-actions"><a class="button button-primary" href="#email" data-page="email"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg>Scan Email</a><a class="button button-outline" href="#url" data-page="url"><svg viewBox="0 0 24 24"><path d="M10 13.5a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 10.5a5 5 0 0 0-7.1 0l-2 2A5 5 0 0 0 12 19.6l1.1-1.1"/></svg>Scan URL</a></div>
+              <p class="fine-print">Risk scores are indicative assessments and are not guaranteed probabilities of phishing.</p>
+            </article>
+          </div>
+
+          <article class="card table-card">
+            <div class="card-heading"><div><h3>Recent Analysis</h3><p>Latest shared history records</p></div><a class="text-link" href="#history" data-page="history">View all history <span aria-hidden="true">→</span></a></div>
+            <div class="table-wrap"><table><thead><tr><th>Date and time</th><th>Type</th><th>Email subject or URL</th><th>Classification</th><th>Risk level</th><th>Risk score</th><th>Action</th></tr></thead><tbody id="dashboard-records"></tbody></table><p class="no-results" id="dashboard-recent-empty" hidden>No shared analyses have been recorded yet.</p></div>
+          </article>
+        </section>
+
+        <section class="view" id="email" data-view="email" hidden>
+          <div class="page-heading">
+            <span class="tag tag-blue">EMAIL CLASSIFICATION</span>
+            <h2>Email Scanner</h2>
+            <p>Analyse sender details and message content with the trained TF-IDF and Multinomial Naive Bayes classifier.</p>
+          </div>
+          <div class="scanner-layout">
+            <form class="card scanner-form" id="email-form">
+              <div class="card-heading form-heading"><div><h3>Email Details</h3><p>Fields marked with an asterisk are required</p></div></div>
+              <div class="form-content">
+                <div class="field-grid">
+                  <label class="field"><span>SENDER EMAIL ADDRESS <b>*</b></span><input id="email-from" name="sender" type="email" placeholder="sender@example.com" autocomplete="email" required></label>
+                  <label class="field"><span>EMAIL SUBJECT <b>*</b></span><input id="email-subject" name="subject" type="text" placeholder="Enter the email subject" required></label>
+                </div>
+                <label class="field"><span>EMAIL MESSAGE <b>*</b></span><textarea id="email-body" name="body" placeholder="Paste the complete email message here..." required></textarea></label>
+                <label class="field"><span>OPTIONAL URL</span><input id="email-url" name="url" type="url" placeholder="https://example.com/link-from-email"></label>
+                <div class="form-actions"><p>Submitted to the local Flask API for analysis; message content is not executed.</p><button class="button button-quiet" type="reset">Clear</button><button class="button button-primary" type="submit"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4 4M8 10.8h5.5m-2.75-2.75v5.5"/></svg>Analyse Email</button></div>
+                <p class="form-message" id="email-message" role="status" hidden></p>
+              </div>
+            </form>
+            <aside class="card risk-card" id="email-assessment">
+              <div class="card-heading"><div><h3>Risk Assessment</h3><p>Explainable classification result</p></div><span class="help-mark" title="Scores are indicative and are not probabilities." aria-label="Scores are indicative and are not probabilities.">?</span></div>
+              <div class="risk-overview"><div class="risk-gauge"><strong class="risk-score">—</strong><small>OUT OF 100</small></div><div class="risk-description"><span class="tag tag-muted risk-status">NOT ANALYSED</span><p class="risk-summary">Submit an email or URL to generate an indicative risk assessment.</p></div></div>
+              <div class="risk-legend"><div><i class="dot dot-low"></i><span>Low Risk<small>0–30</small></span></div><div><i class="dot dot-medium"></i><span>Medium Risk<small>31–69</small></span></div><div><i class="dot dot-high"></i><span>High Risk<small>70–100</small></span></div></div>
+              <div class="assessment-section"><span>DETECTION REASONS</span><p class="reasons">No detection reasons available yet.</p></div>
+              <div class="assessment-section"><span>SUSPICIOUS WORDS OR PATTERNS</span><p class="patterns">No suspicious words or patterns identified.</p></div>
+              <div class="assessment-section"><span>SUSPICIOUS INDICATORS</span><p class="indicators">No suspicious indicators reported.</p></div>
+              <p class="notice">The risk score is indicative and is not a guaranteed probability that an email or URL is phishing.</p>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" id="url" data-view="url" hidden>
+          <div class="page-heading">
+            <span class="tag tag-blue">RULE-BASED INSPECTION</span>
+            <h2>URL Scanner</h2>
+            <p>Inspect URL structure and suspicious patterns using transparent, rule-based checks in the Flask backend.</p>
+          </div>
+          <div class="scanner-layout">
+            <div class="scanner-main">
+              <form class="card scanner-form" id="url-form">
+                <div class="card-heading form-heading"><div><h3>URL Analysis</h3><p>Enter the complete address including http:// or https://</p></div></div>
+                <div class="form-content">
+                  <label class="field"><span>URL TO INSPECT <b>*</b></span><div class="input-with-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13.5a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 10.5a5 5 0 0 0-7.1 0l-2 2A5 5 0 0 0 12 19.6l1.1-1.1"/></svg><input id="url-input" name="url" type="url" placeholder="https://example.com/path" required></div></label>
+                  <div class="form-actions"><p>The local Flask rule engine inspects this URL without opening it.</p><button class="button button-quiet" type="reset">Clear</button><button class="button button-primary" type="submit"><svg viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4 4M8 10.8h5.5m-2.75-2.75v5.5"/></svg>Analyse URL</button></div>
+                  <p class="form-message" id="url-message" role="status" hidden></p>
+                </div>
+              </form>
+              <article class="card inspection-card"><span class="metric-icon icon-email"><svg viewBox="0 0 24 24"><path d="M12 3 20 7v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7l8-4Z"/><path d="m9 12 2 2 4-4"/></svg></span><div><h3>URL Inspection Summary</h3><p>The rule engine checks URL length, IP-address usage, unusual symbols, excessive subdomains, suspicious keywords and insecure protocols. Submit a valid URL to see its validation and domain details.</p></div></article>
+            </div>
+            <aside class="card risk-card" id="url-assessment">
+              <div class="card-heading"><div><h3>Risk Assessment</h3><p>Explainable classification result</p></div><span class="help-mark" title="Scores are indicative and are not probabilities." aria-label="Scores are indicative and are not probabilities.">?</span></div>
+              <div class="risk-overview"><div class="risk-gauge"><strong class="risk-score">—</strong><small>OUT OF 100</small></div><div class="risk-description"><span class="tag tag-muted risk-status">NOT ANALYSED</span><p class="risk-summary">Submit an email or URL to generate an indicative risk assessment.</p></div></div>
+              <div class="risk-legend"><div><i class="dot dot-low"></i><span>Low Risk<small>0–30</small></span></div><div><i class="dot dot-medium"></i><span>Medium Risk<small>31–69</small></span></div><div><i class="dot dot-high"></i><span>High Risk<small>70–100</small></span></div></div>
+              <div class="assessment-section"><span>DETECTION REASONS</span><p class="reasons">No detection reasons available yet.</p></div>
+              <div class="assessment-section"><span>SUSPICIOUS WORDS OR PATTERNS</span><p class="patterns">No suspicious words or patterns identified.</p></div>
+              <div class="assessment-section"><span>SUSPICIOUS INDICATORS</span><p class="indicators">No suspicious indicators reported.</p></div>
+              <p class="notice">The risk score is indicative and is not a guaranteed probability that an email or URL is phishing.</p>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" id="history" data-view="history" hidden>
+          <div class="page-heading">
+            <span class="tag tag-blue">SHARED ANALYSIS RECORDS</span>
+            <h2>Detection History</h2>
+            <p>Review shared email and URL analyses stored by the Flask backend.</p>
+          </div>
+          <article class="card table-card history-card">
+            <div class="card-heading"><div><h3>Analysis Records</h3><p id="history-count">History has not been loaded.</p></div><span class="tag tag-muted">SHARED HISTORY</span></div>
+            <div class="table-filters">
+              <label class="history-search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="history-search" type="search" maxlength="100" placeholder="Search subject, URL or classification..." aria-label="Search analysis records"></label>
+              <label class="select-wrap"><span class="sr-only">Filter by type</span><select id="type-filter"><option value="all">All types</option><option value="email">Email</option><option value="url">URL</option></select></label>
+              <label class="select-wrap"><span class="sr-only">Filter by risk</span><select id="risk-filter"><option value="all">All risk levels</option><option value="low">Low Risk</option><option value="medium">Medium Risk</option><option value="high">High Risk</option></select></label>
+            </div>
+            <p class="form-message form-message-info history-message" id="history-message" role="status" hidden></p>
+            <div class="table-wrap"><table><thead><tr><th>Date and time</th><th>Type</th><th>Email subject or URL</th><th>Classification</th><th>Risk level</th><th>Risk score</th><th>Action</th></tr></thead><tbody id="history-records"></tbody></table><p class="no-results" id="no-results" hidden>No shared analysis records match these filters.</p></div>
+            <div class="history-pagination" aria-label="History pagination">
+              <button class="button button-quiet" id="history-previous" type="button" disabled>Previous</button>
+              <span id="history-page-label">Page 1</span>
+              <button class="button button-quiet" id="history-next" type="button" disabled>Next</button>
+            </div>
+          </article>
+        </section>
+
+        <section class="view" id="reports" data-view="reports" hidden>
+          <div class="page-heading report-heading">
+            <div><span class="tag tag-blue">SHARED REPORTING</span><h2>Analysis Reports</h2><p>Summaries and exports are generated from shared analyses stored by the Flask backend.</p></div>
+            <button type="button" class="button button-quiet export-button" id="export-report" disabled><svg viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 17v3h16v-3"/></svg>Export Report</button>
+          </div>
+          <p class="form-message form-message-info report-message" id="report-message" role="status" hidden></p>
+          <div class="report-metrics">
+            <article class="metric-card"><div class="metric-top"><span class="metric-icon icon-chart"><svg viewBox="0 0 24 24"><path d="M4 19V5m0 14h17M8 16v-4m5 4V8m5 8v-7"/></svg></span><span class="micro-label">SHARED</span></div><p>Total Analyses</p><strong id="report-total">—</strong><small>Shared records</small></article>
+            <article class="metric-card"><div class="metric-top"><span class="metric-icon icon-email"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg></span><span class="micro-label">SHARED</span></div><p>Email Analyses</p><strong id="report-emails">—</strong><small>Shared records</small></article>
+            <article class="metric-card"><div class="metric-top"><span class="metric-icon icon-warning"><svg viewBox="0 0 24 24"><path d="M10 13.5a5 5 0 0 0 7.1 0l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 10.5a5 5 0 0 0-7.1 0l-2 2A5 5 0 0 0 12 19.6l1.1-1.1"/></svg></span><span class="micro-label">SHARED</span></div><p>URL Analyses</p><strong id="report-urls">—</strong><small>Shared records</small></article>
+            <article class="metric-card"><div class="metric-top"><span class="metric-icon icon-danger"><svg viewBox="0 0 24 24"><path d="M12 3 20 7v5c0 5-3.4 8-8 9-4.6-1-8-4-8-9V7l8-4Z"/><path d="M12 8v5m0 3h.01"/></svg></span><span class="micro-label">MODEL</span></div><p>Spam / Legitimate Emails</p><strong id="report-email-classifications">—</strong><small>Classification totals</small></article>
+          </div>
+          <div class="report-grid">
+            <article class="card distribution-card"><div class="card-heading"><div><h3>Risk-level Distribution</h3><p>Across shared analysis records</p></div></div>
+              <div class="distribution-row"><div><span><i class="dot dot-low"></i>Low Risk</span><small id="report-low-summary">—</small></div><div class="progress-track"><span class="progress-low" id="report-low-bar"></span></div></div>
+              <div class="distribution-row"><div><span><i class="dot dot-medium"></i>Medium Risk</span><small id="report-medium-summary">—</small></div><div class="progress-track"><span class="progress-medium" id="report-medium-bar"></span></div></div>
+              <div class="distribution-row"><div><span><i class="dot dot-high"></i>High Risk</span><small id="report-high-summary">—</small></div><div class="progress-track"><span class="progress-high" id="report-high-bar"></span></div></div>
+              <p class="notice" id="report-risk-notice">Risk scores are indicative and are not guaranteed probabilities of phishing.</p>
+            </article>
+            <article class="card chart-card report-chart"><div class="card-heading"><div><h3>Analysis Activity</h3><p>Shared analyses (blue) and medium/high risk (red), last seven UTC days</p></div></div>
+              <div class="chart-area"><svg class="activity-chart" id="report-activity-chart" viewBox="0 0 760 250" role="img" aria-label="Shared analysis activity over the last seven days"><defs><linearGradient id="report-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#3487ff" stop-opacity=".24"/><stop offset="1" stop-color="#3487ff" stop-opacity="0"/></linearGradient></defs><g class="chart-grid"><path d="M44 28H742M44 88H742M44 148H742M44 208H742"/><text class="activity-y3" x="10" y="32">—</text><text class="activity-y2" x="10" y="92">—</text><text class="activity-y1" x="16" y="152">—</text><text class="activity-y0" x="22" y="212">—</text></g><path class="chart-fill report-fill activity-fill-path" d=""/><path class="chart-line activity-total-path" d=""/><path class="chart-line chart-line-alert activity-flagged-path" d=""/><g class="chart-points activity-points"></g><g class="chart-days activity-days"></g></svg></div>
+            </article>
+          </div>
+          <article class="card interpretation-card"><span class="help-mark">?</span><div><h3>Report interpretation</h3><p>Reports summarize saved shared analyses. Risk scores are indicative assessments, not probabilities or guarantees of phishing.</p></div></article>
+        </section>
+
+        <footer class="app-footer">
+          <strong class="footer-brand">PHISHLENS</strong>
+          <p class="footer-tagline">Built with vision. Created with passion.</p>
+          <p class="footer-copyright">© 2026. All Rights Reserved.</p>
+          <p class="footer-signature">A <span>TVS × MPY</span> Creation</p>
+        </footer>
+      </main>
+    </div>
+  </div>
+
+  <dialog class="detail-dialog" id="record-dialog" aria-labelledby="dialog-title">
+    <div class="dialog-heading"><div><span class="tag tag-blue">ANALYSIS RECORD</span><h2 id="dialog-title">Analysis details</h2></div><button class="icon-button dialog-close" type="button" aria-label="Close details"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+    <div id="dialog-content"></div>
+  </dialog>
+  <script src="script.js"></script>
+</body>
+</html>
