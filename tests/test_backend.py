@@ -196,6 +196,7 @@ class EmailModelTests(unittest.TestCase):
                 "releases/assets/101",
                 "github-test-token",
                 "application/octet-stream",
+                "classifier asset download",
             )
 
         self.assertEqual(len(redirected_requests), 1)
@@ -525,11 +526,68 @@ class EmailModelTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(
                 EmailModelUnavailable,
-                "rejected model-release authentication",
+                "release metadata lookup request with HTTP status 401",
             ) as error:
                 get_model_paths()
 
         self.assertNotIn("test-token", str(error.exception))
+
+    def test_github_release_lookup_404_logs_stage_without_sensitive_details(self):
+        private_url = (
+            "https://api.github.com/repos/example-org/private-models/"
+            "releases/tags/v1.0.0?token=private-token"
+        )
+        opener_patch, _ = self._github_opener_patch([
+            HTTPError(private_url, 404, "Not Found", {}, None),
+        ])
+        with (
+            patch.dict(os.environ, self._github_model_environment(b"a", b"b")),
+            opener_patch,
+            self.assertLogs("email_analyzer", level="WARNING") as captured,
+        ):
+            with self.assertRaisesRegex(
+                EmailModelUnavailable,
+                "release lookup returned HTTP 404",
+            ):
+                get_model_paths()
+
+        diagnostic = "\n".join(captured.output)
+        self.assertIn("release metadata lookup", diagnostic)
+        self.assertIn("HTTP status 404", diagnostic)
+        self.assertNotIn("https://", diagnostic)
+        self.assertNotIn("private-token", diagnostic)
+        self.assertNotIn("test-token", diagnostic)
+
+    def test_github_asset_404_logs_asset_stage_without_sensitive_details(self):
+        metadata = self._release_metadata(b"classifier", b"vectorizer")
+        private_url = (
+            "https://api.github.com/repos/example-org/private-models/"
+            "releases/assets/101?token=private-token"
+        )
+        opener_patch, _ = self._github_opener_patch([
+            self._github_response(metadata),
+            HTTPError(private_url, 404, "Not Found", {}, None),
+        ])
+        with (
+            patch.dict(os.environ, self._github_model_environment(
+                b"classifier",
+                b"vectorizer",
+            )),
+            opener_patch,
+            self.assertLogs("email_analyzer", level="WARNING") as captured,
+        ):
+            with self.assertRaisesRegex(
+                EmailModelUnavailable,
+                "classifier asset download returned HTTP 404",
+            ):
+                get_model_paths()
+
+        diagnostic = "\n".join(captured.output)
+        self.assertIn("classifier asset download", diagnostic)
+        self.assertIn("HTTP status 404", diagnostic)
+        self.assertNotIn("https://", diagnostic)
+        self.assertNotIn("private-token", diagnostic)
+        self.assertNotIn("test-token", diagnostic)
 
     def test_github_release_missing_model_asset_is_reported(self):
         metadata = json.dumps({

@@ -5,6 +5,7 @@ import hashlib
 import hmac
 import http.client
 import json
+import logging
 import os
 import pickle
 import re
@@ -34,6 +35,8 @@ MAX_GITHUB_RESPONSE_BYTES = 1024 * 1024
 GITHUB_REQUEST_TIMEOUT_SECONDS = 15
 SHA256_HEX_LENGTH = hashlib.sha256().digest_size * 2
 GITHUB_API_BASE_URL = "https://api.github.com"
+
+logger = logging.getLogger(__name__)
 
 
 class EmailModelUnavailable(RuntimeError):
@@ -202,7 +205,7 @@ def _verify_model_sha256(model_path, expected_sha256, model_name):
         )
 
 
-def _github_request(url, token, accept):
+def _github_request(url, token, accept, stage):
     request = Request(
         url,
         headers={
@@ -216,16 +219,31 @@ def _github_request(url, token, accept):
         opener = build_opener(_SafeGitHubRedirectHandler())
         return opener.open(request, timeout=GITHUB_REQUEST_TIMEOUT_SECONDS)
     except HTTPError as error:
+        logger.warning(
+            "GitHub model %s failed with HTTP status %s.",
+            stage,
+            error.code,
+        )
         if error.code in {401, 403}:
             raise EmailModelUnavailable(
-                "GitHub rejected model-release authentication or access."
+                f"GitHub rejected the {stage} request with HTTP status {error.code}."
             ) from error
         if error.code == 404:
+            if stage == "release metadata lookup":
+                message = (
+                    "GitHub release lookup returned HTTP 404. Confirm the repository "
+                    "is accessible to the configured token and the release tag exists."
+                )
+            else:
+                message = (
+                    f"GitHub {stage} returned HTTP 404. Confirm the release asset "
+                    "exists and the configured token can access it."
+                )
             raise EmailModelUnavailable(
-                "The configured GitHub release or required model asset was not found."
+                message
             ) from error
         raise EmailModelUnavailable(
-            f"GitHub model download failed with HTTP status {error.code}."
+            f"GitHub {stage} failed with HTTP status {error.code}."
         ) from error
     except (TimeoutError, URLError, OSError) as error:
         if isinstance(error, URLError) and isinstance(error.reason, TimeoutError):
@@ -268,6 +286,7 @@ def _download_release_model_files():
             release_url,
             token,
             "application/vnd.github+json",
+            "release metadata lookup",
         ) as response:
             release_data = response.read(MAX_GITHUB_RESPONSE_BYTES + 1)
         if len(release_data) > MAX_GITHUB_RESPONSE_BYTES:
@@ -305,6 +324,10 @@ def _download_release_model_files():
             None,
         )
         if asset is None:
+            logger.warning(
+                "GitHub release metadata is missing the required %s asset.",
+                asset_name,
+            )
             raise EmailModelUnavailable(
                 f"The GitHub release is missing the required {asset_name} asset."
             )
@@ -342,6 +365,7 @@ def _download_release_model_files():
                     asset_url,
                     token,
                     "application/octet-stream",
+                    f"{model_name} asset download",
                 ) as response:
                     content_length = response.headers.get("Content-Length")
                     if content_length is not None:
